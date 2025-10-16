@@ -1,0 +1,38 @@
+- name: Set default {{ role_name }} directory
+  set_fact:
+    pihole_directory: /opt/{{ role_name }}
+
+- name: Ensure {{ role_name }} config dir exists
+  file:
+    path: "{{ pihole_directory }}/config"
+    state: directory
+    mode: '0755'
+
+- name: Ensure {{ role_name }} dnsmasq dir exists
+  file:
+    path: "{{ pihole_directory }}/dnsmasq"
+    state: directory
+    mode: '0755'
+
+- name: Deploy {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: unless-stopped
+    recreate: true
+    pull: yes
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8070:80/tcp"
+      - "4433:443/tcp"   
+    env:
+      TZ: 'Europe/Kyiv'
+      FTLCONF_dns_listeningMode: 'all'
+      WEBPASSWORD: ''
+    volumes:
+      - "{{ pihole_directory }}/config:/etc/pihole"
+      - "{{ pihole_directory }}/dnsmasq:/etc/dnsmasq.d"
+    capabilities:
+      - NET_ADMIN
+    

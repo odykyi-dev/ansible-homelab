@@ -1,0 +1,29 @@
+- name: Ensure {{ role_name }} Docker data volume exists
+  community.docker.docker_volume:
+    name: jenkins_data
+    state: present
+
+- name: Ensure {{ role_name }} Docker certs volume exists
+  community.docker.docker_volume:
+    name: jenkins_certs
+    state: present
+
+- name: Deploy {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: unless-stopped
+    recreate: true
+    pull: yes
+    privileged: true
+    networks:
+      - name: jenkins
+    ports:
+      - "9080:8080"
+      - "50000:50000"
+    env:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "jenkins_certs:/certs/client"
+      - "jenkins_data:/var/jenkins_home:rw"

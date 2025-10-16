@@ -1,0 +1,61 @@
+---
+- name: Set default {{ role_name }} directory
+  set_fact:
+    esphome_directory: /opt/{{ role_name }}/config
+
+- name: Ensure {{ role_name }} config dir exists
+  file:
+    path: "{{ esphome_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Upload {{ role_name }} config files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ esphome_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ lookup('fileglob', playbook_dir + '/roles/' + role_name + '/files/*', wantlist=True) }}"
+  register: config_copy
+
+- name: Rebuild {{ role_name }} passwd file if users defined
+  when: mqtt_users is defined and mqtt_users | length > 0
+  block:
+    - name: Remove old passwd
+      file:
+        path: "{{ esphome_directory }}/passwd"
+        state: absent
+
+    - name: Generate passwd entries
+      shell: >-
+        docker run --rm -v {{ esphome_directory }}:/mosquitto/config
+        {{ docker_images.get(role_name) }}
+        sh -c "mosquitto_passwd -b {{ '-c' if (item_index == 0) else '' }} /mosquitto/config/passwd {{ item.name }} {{ item.password }}"
+      args:
+        executable: /bin/sh
+      loop: "{{ mqtt_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: item_index
+      no_log: true
+      register: passwd_gen
+
+- name: Run {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: always
+    recreate: true
+    pull: yes
+    networks:
+      - name: smarthome
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - /opt/mosquitto/data:/mosquitto/data
+      - /opt/mosquitto/log:/mosquitto/log
+      - /opt/mosquitto/config:/mosquitto/config
+    state: started
+    restart: "{{ config_copy.changed or (passwd_gen is defined and passwd_gen.changed) }}"

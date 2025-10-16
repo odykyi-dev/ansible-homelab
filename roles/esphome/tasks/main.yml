@@ -1,0 +1,103 @@
+---
+- name: Set default {{ role_name }} directory
+  set_fact:
+    esphome_directory: /opt/{{ role_name }}/config
+
+- name: Ensure {{ role_name }} directory exists
+  file:
+    path: "{{ esphome_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Upload {{ role_name }} YAML configs
+  copy:
+    src: "{{ item }}"
+    dest: "{{ esphome_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+    force: yes
+  loop: "{{ lookup('fileglob', playbook_dir + '/roles/' + role_name + '/files/*', wantlist=True) }}"
+
+- name: Pull and run {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: always
+    network_mode: host
+    privileged: true
+    volumes:
+      - "{{ esphome_directory }}:/config"
+      - /etc/localtime:/etc/localtime:ro
+
+- name: Get current {{ role_name }} version
+  shell: docker exec esphome esphome version
+  register: current_esphome_version
+  changed_when: false
+
+- name: Read stored {{ role_name }} version from .version file (if exists)
+  slurp:
+    src: "{{ esphome_directory }}/.version"
+  register: stored_esphome_version
+  ignore_errors: true
+
+- name: Determine if {{ role_name }} version changed
+  set_fact:
+    esphome_version_changed: >-
+      {{
+        (stored_esphome_version.content | default('') | b64decode | trim)
+        != (current_esphome_version.stdout | trim)
+      }}
+
+- block:
+  - name: Find {{ role_name }} YAML device files (skip secrets.yaml)
+    find:
+      paths: "{{ esphome_directory }}"
+      patterns: "*.yaml"
+      excludes:
+        - secrets.yaml
+        - .version
+      file_type: file
+    register: esphome_yaml_files
+
+  - name: Map YAML filenames to device names
+    set_fact:
+      esphome_devices: "{{ esphome_yaml_files.files
+                         | map(attribute='path')
+                         | map('basename')
+                         | map('splitext')
+                         | map('first')
+                         | list }}"
+
+  - name: Resolve .local hostnames to IP addresses
+    shell: |
+      ping -c 1 "{{ item }}.local" | head -1 | awk -F'[()]' '{print $2}'
+    register: resolved_host
+    changed_when: false
+    loop: "{{ esphome_devices }}"
+    loop_control:
+      label: "{{ item }}"
+
+  - name: Map device names to IP addresses
+    set_fact:
+      esphome_device_ips: "{{ esphome_devices
+                            | zip(resolved_host.results | map(attribute='stdout') | list)
+                            | map('list')
+                            | list
+                          }}"
+
+  - name: Compile and upload {{ role_name }} configs OTA
+    shell: docker exec esphome esphome compile "/config/{{ item.0 }}.yaml" && docker exec esphome esphome upload "/config/{{ item.0 }}.yaml" --device "{{ item.1 }}"
+    loop: "{{ esphome_device_ips }}"
+    loop_control:
+      label: "{{ item.0 }}"
+    when: item.1 != ""   # skip if IP is empty
+
+  - name: Save current {{ role_name }} version
+    copy:
+      content: "{{ current_esphome_version.stdout | trim }}"
+      dest: "{{ esphome_directory }}/.version"
+      owner: root
+      group: root
+      mode: '0644'
+  when: esphome_version_changed

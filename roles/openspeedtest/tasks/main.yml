@@ -1,0 +1,11 @@
+- name: Deploy {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    recreate: true
+    pull: yes
+    ports:
+      - "3000:3000"
+    volumes:
+      - /opt/{{ role_name }}/data:/data
+    restart_policy: always

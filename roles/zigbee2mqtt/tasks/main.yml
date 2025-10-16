@@ -1,0 +1,55 @@
+---
+# Zigbee2MQTT role
+- name: Set default {{ role_name }} directory
+  set_fact:
+    zigbee2mqtt_directory: /opt/{{ role_name }}/data
+
+- name: Ensure Zigbee2MQTT config directory exists
+  file:
+    path: "{{ zigbee2mqtt_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Upload Zigbee2MQTT extra files (except configuration.yaml)
+  copy:
+    src: "{{ item }}"
+    dest: "{{ zigbee2mqtt_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ lookup('fileglob', playbook_dir + '/roles/' + role_name + '/files/*', wantlist=True) | reject('search', 'configuration.yaml$') | list }}"
+
+- name: Render Zigbee2MQTT configuration.yaml
+  template:
+    src: "{{ playbook_dir }}/roles/{{ role_name }}/templates/configuration.yaml.j2"
+    dest: "{{ zigbee2mqtt_directory }}/configuration.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: zigbee2mqtt_config_template
+  vars:
+    z2m_mqtt_server: "mqtt://mosquitto:1883"
+    z2m_mqtt_user: "{{ (mqtt_users | first).name }}"
+    z2m_mqtt_password: "{{ (mqtt_users | first).password }}"
+
+- name: Deploy Zigbee2MQTT container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: unless-stopped
+    recreate: "{{ zigbee2mqtt_config_template.changed | default(true) }}"
+    pull: yes
+    networks:
+      - name: smarthome
+    ports:
+      - "8080:8080"
+    volumes:
+      - "{{ zigbee2mqtt_directory }}:/app/data"
+      - /run/udev:/run/udev:ro
+    env:
+      TZ: Europe/Kyiv
+    devices:
+      - /dev/serial/by-id/usb-Silicon_Labs_Sonoff_Zigbee_3.0_USB_Dongle_Plus_0001-if00-port0:/dev/ttyACM0
+    

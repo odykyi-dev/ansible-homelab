@@ -1,0 +1,64 @@
+- name: Set default {{ role_name }} directory
+  set_fact:
+    watchtower_directory: /opt/{{ role_name }}
+
+- name: Ensure {{ role_name }} default dir exists
+  file:
+    path: "{{ watchtower_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Ensure {{ role_name }} hooks dir exists
+  file:
+    path: "{{ watchtower_directory }}/watchtower-hooks"
+    state: directory
+    mode: '0755'    
+
+- name: Upload {{ role_name }} .env file
+  copy:
+    src: "{{ item }}"
+    dest: "{{ watchtower_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ lookup('fileglob', playbook_dir + '/roles/' + role_name + '/files/*', wantlist=True) | list }}"
+
+- name: Upload {{ role_name }} hook scripts and directories
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/roles/{{ role_name }}/files/hooks/"
+    dest: "{{ watchtower_directory }}/watchtower-hooks/"
+    owner: root
+    group: root
+    mode: preserve
+
+- name: Find all .sh files in a directory
+  ansible.builtin.find:
+    paths: "{{ watchtower_directory }}/watchtower-hooks/"
+    patterns: "*.sh"
+    recurse: yes
+  register: sh_files_to_make_executable
+
+- name: Make all found .sh files executable
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "+x"
+  loop: "{{ sh_files_to_make_executable.files }}"
+
+- name: Deploy {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    restart_policy: unless-stopped
+    image: "{{ docker_images.get(role_name) }}"
+    recreate: true
+    pull: yes
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
+      - "/opt/{{ role_name }}/watchtower-hooks:/etc/watchtower-hooks"
+      - /home/{{ ansible_user }}/.docker/config.json:/config.json
+    command: --interval 3600 --cleanup --debug
+    env:
+      WATCHTOWER_NOTIFICATION_URL: "telegram://{{ telegram_bot_api_key }}@telegram/?channels={{ (telegram_bot_chat_ids | first) }}"
+    env_file: "{{ watchtower_directory }}/watchtower-notifications.env"
+    labels:
+      watchtower.lifecycle.hook.enabled: "true"

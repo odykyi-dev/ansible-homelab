@@ -1,0 +1,55 @@
+---
+- name: Set default {{ role_name }} directory
+  set_fact:
+    ha_directory: /opt/{{ role_name }}/config
+
+- name: Ensure {{ role_name }} directory exists
+  file:
+    path: "{{ ha_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Upload {{ role_name }} YAML configs
+  copy:
+    src: "{{ item }}"
+    dest: "{{ ha_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+    force: yes
+  loop: "{{ lookup('fileglob', playbook_dir + '/roles/' + role_name + '/files/*', wantlist=True) }}"
+
+- name: Render {{ role_name }} secrets.yaml
+  template:
+    src: "{{ playbook_dir }}/roles/{{ role_name }}/templates/secrets.yaml.j2"
+    dest: "{{ ha_directory }}/secrets.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    ha_telegram_bot_api_key: "{{ telegram_bot_api_key }}"
+    ha_telegram_bot_chat_ids: "{{ telegram_bot_chat_ids }}"
+    ha_telegram_bot_my_chat_id: "{{ telegram_bot_my_chat_id }}"
+    ha_mariadb_url: "mysql://{{ mariadb_user }}:{{ mariadb_password }}@{{ansible_host}}:3306/{{ mariadb_database }}?charset=utf8mb4"
+    ha_sp_dc: "{{ sp_dc }}"
+    ha_sp_key: "{{ sp_key }}"
+    ha_mqtt_password: "{{ (mqtt_users | first).password }}"
+    ha_wifi_ap_password: "{{ wifi_ap_password }}"
+    ha_hik_pass: "{{ hik_pass }}"
+
+- name: Pull and run {{ role_name }} container
+  community.docker.docker_container:
+    name: "{{ role_name }}"
+    image: "{{ docker_images.get(role_name) }}"
+    restart_policy: unless-stopped
+    network_mode: host
+    privileged: true
+    volumes:
+      - "{{ ha_directory }}:/config"
+      - /opt/{{ role_name }}/reolink_recordings:/media/reolink_recordings
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    env:
+      TZ: Europe/Kyiv  
+
+

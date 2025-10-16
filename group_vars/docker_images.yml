@@ -1,0 +1,12 @@
+docker_images:
+  esphome: ghcr.io/esphome/esphome:stable
+  mariadb: mariadb:latest
+  openspeedtest: openspeedtest/latest
+  mosquitto: eclipse-mosquitto:latest
+  zigbee2mqtt: ghcr.io/koenkk/zigbee2mqtt:latest
+  homeassistant: ghcr.io/home-assistant/home-assistant:stable
+  watchtower: containrrr/watchtower
+  pihole: pihole/pihole:latest
+  jenkins: jenkins/jenkins:lts
+  gitlab: gitlab/gitlab-ce:latest
+  gitlab-runner: gitlab/gitlab-runner:latest

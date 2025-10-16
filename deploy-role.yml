@@ -1,0 +1,12 @@
+- name: Pull image for {{ role_name }}
+  community.docker.docker_image:
+    name: "{{ docker_images.get(role_name) }}"
+    source: pull
+    force_source: yes
+  when:
+    - docker_images is defined
+    - docker_images is mapping
+    - (docker_images.get(role_name) | default('', true) | trim) != ''
+
+- name: Run role-specific tasks if exist
+  include_tasks: "roles/{{ role_name }}/tasks/main.yml"

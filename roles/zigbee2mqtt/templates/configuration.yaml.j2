@@ -1,0 +1,21 @@
+version: 4
+homeassistant:
+  enabled: true
+frontend:
+  enabled: true
+watchdog:
+  enabled: true
+mqtt:
+  base_topic: zigbee2mqtt
+  server: {{ z2m_mqtt_server }}
+  user: {{ z2m_mqtt_user }}
+  password: {{ z2m_mqtt_password }}
+serial:
+  port: /dev/ttyACM0
+  adapter: zstack
+ota:
+  update_check_interval: 2880
+  zigbee_ota_override_index_location: https://raw.githubusercontent.com/Koenkk/zigbee-OTA/refs/heads/master/index.json
+advanced:
+  log_level: warning
+devices:

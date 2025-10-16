@@ -1,0 +1,106 @@
+- hosts: server
+  become: true
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+    - group_vars/docker_images.yml
+  vars:
+    services:
+      - esphome
+      - gitlab
+      - gitlab-runner
+      - jenkins
+      - mariadb
+      - mosquitto
+      - openspeedtest
+      - pihole
+      - watchtower
+      - zigbee2mqtt
+  tasks:
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - block:
+        - name: Ensure required packages are installed
+          apt:
+            name:
+              - ca-certificates
+              - curl
+              - gnupg
+              - lsb-release
+            state: present
+            update_cache: true
+
+        - name: Create keyrings directory if it does not exist
+          file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+
+        - name: Download Docker GPG key to keyrings
+          get_url:
+            url: https://download.docker.com/linux/debian/gpg
+            dest: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+            force: true
+
+        - name: Add Docker repository
+          apt_repository:
+            repo: >-
+              deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+              https://download.docker.com/linux/debian
+              trixie stable
+            state: present
+            filename: docker
+
+        - name: Install Docker Engine
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+            state: present
+            update_cache: true
+
+        - name: Ensure docker-compose plugin is present
+          apt:
+            name: docker-compose-plugin
+            state: present
+            update_cache: true
+
+        - name: Set default docker user if not defined
+          set_fact:
+            docker_user: "{{ ansible_user }}"
+          #when: docker_user is not defined
+
+        - name: Check if user is in docker group
+          shell: id -nG "{{ docker_user }}"
+          register: user_groups
+          changed_when: false    
+
+        - name: Add user to docker group if not already a member
+          user:
+            name: "{{ docker_user }}"
+            groups: docker
+            append: true
+          when: "'docker' not in user_groups.stdout.split()"  
+      when: docker_check.rc != 0   # ✅ skip everything if docker already exists
+
+    - name: Ensure smarthome docker network exists
+      community.docker.docker_network:      
+        name: smarthome
+        state: present
+
+    - name: Ensure jenkins docker network exists
+      community.docker.docker_network:      
+        name: jenkins
+        state: present
+
+    - name: Deploy each service
+      include_tasks: deploy-role.yml
+      loop: "{{ services }}"
+      loop_control:
+        loop_var: role_name
