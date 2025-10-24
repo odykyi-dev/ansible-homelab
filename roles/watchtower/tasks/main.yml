@@ -31,14 +31,14 @@
     group: root
     mode: preserve
 
-- name: Find all .sh files in a directory
+- name: Find all hooks files in a directory
   ansible.builtin.find:
     paths: "{{ watchtower_directory }}/watchtower-hooks/"
-    patterns: "*.sh"
+    patterns: "*"
     recurse: yes
   register: sh_files_to_make_executable
 
-- name: Make all found .sh files executable
+- name: Make all found hooks files executable
   ansible.builtin.file:
     path: "{{ item.path }}"
     mode: "+x"
@@ -60,5 +60,3 @@
     env:
       WATCHTOWER_NOTIFICATION_URL: "telegram://{{ telegram_bot_api_key }}@telegram/?channels={{ (telegram_bot_chat_ids | first) }}"
     env_file: "{{ watchtower_directory }}/watchtower-notifications.env"
-    labels:
-      watchtower.lifecycle.hook.enabled: "true"
